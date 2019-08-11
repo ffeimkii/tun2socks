@@ -115,7 +115,7 @@ func (tcpTunnel *TCPTunnel) Run() {
 	tcpTunnel.SetLocalEndpointStatus(StatusProxying)
 
 	wgw.WaitGroup.Wait()
-	tcpTunnel.Close(errors.New("OK"))
+	tcpTunnel.Close(nil)
 }
 
 func (tcpTunnel *TCPTunnel) readFromLocalWriteToRemote() {
@@ -139,9 +139,13 @@ readFromLocal:
 						continue readFromLocal
 					}
 				}
-				if !util.IsClosed(err) {
-					log.Println("[error] read from local failed", err, tcpTunnel.remoteAddr)
-					tcpTunnel.Close(errors.New("read from local failed" + err.String()))
+				if err == tcpip.ErrClosedForSend || err == tcpip.ErrClosedForReceive {
+					// do nothing
+				} else if util.IsClosed(err) {
+					tcpTunnel.Close(nil)
+				} else {
+					log.Println(err)
+					tcpTunnel.Close(errors.New("read from local failed, " + err.String()))
 				}
 				break readFromLocal
 			}
@@ -154,10 +158,10 @@ readFromLocal:
 					}
 					n, err := tcpTunnel.remoteConn.Write(v)
 					if err != nil {
-						if !util.IsEOF(err) {
-							if !util.IsBrokenPipe(err) {
-								log.Println("[error] write packet to remote failed", err, tcpTunnel.remoteAddr)
-							}
+						if util.IsBrokenPipe(err) || util.IsEOF(err) {
+							tcpTunnel.Close(nil)
+						} else {
+							log.Println(err)
 							tcpTunnel.Close(err)
 						}
 						break readFromLocal
@@ -186,11 +190,11 @@ readFromRemote:
 			tcpTunnel.remoteConn.SetReadDeadline(time.Now().Add(time.Duration(tcpTunnel.app.Cfg.TCP.Timeout) * time.Second))
 			n, err := tcpTunnel.remoteConn.Read(buf)
 			if err != nil {
-				if !util.IsEOF(err) {
-					if !util.IsTimeout(err) {
-						log.Println("[error] read from remote failed", err, tcpTunnel.remoteAddr)
-					}
+				if !util.IsTimeout(err) && !util.IsConnectionReset(err) && !util.IsEOF(err) {
+					log.Println(err)
 					tcpTunnel.Close(err)
+				} else {
+					tcpTunnel.Close(nil)
 				}
 				break readFromRemote
 			}
@@ -205,7 +209,7 @@ readFromRemote:
 					}
 					var m uintptr
 					var err *tcpip.Error
-					m, err = tcpTunnel.localEndpoint.Write(tcpip.SlicePayload(chunk), tcpip.WriteOptions{})
+					m, _, err = tcpTunnel.localEndpoint.Write(tcpip.SlicePayload(chunk), tcpip.WriteOptions{})
 					n := int(m)
 					if err != nil {
 						if err == tcpip.ErrWouldBlock {
@@ -214,8 +218,12 @@ readFromRemote:
 								continue writeAllPacket
 							}
 						}
-						if !util.IsClosed(err) {
-							log.Println("[error] write to local failed", err, tcpTunnel.remoteAddr)
+						if err == tcpip.ErrClosedForSend || err == tcpip.ErrClosedForReceive {
+							// do nothing
+						} else if util.IsClosed(err) {
+							tcpTunnel.Close(nil)
+						} else {
+							log.Println(err)
 							tcpTunnel.Close(errors.New(err.String()))
 						}
 						break readFromRemote
@@ -236,6 +244,11 @@ readFromRemote:
 // Close this tcp tunnel
 func (tcpTunnel *TCPTunnel) Close(reason error) {
 	tcpTunnel.closeOne.Do(func() {
+		if reason != nil {
+			local, _ := tcpTunnel.localEndpoint.GetLocalAddress()
+			ip := net.ParseIP(local.Addr.To4().String())
+			log.Println("tcp tunnel closed reason:", reason.Error(), tcpTunnel.remoteAddr, fmt.Sprintf("%v:%d", ip, local.Port), tcpTunnel.remoteConn.LocalAddr(), tcpTunnel.remoteConn.RemoteAddr())
+		}
 		tcpTunnel.SetLocalEndpointStatus(StatusClosed)
 		tcpTunnel.SetRemoteStatus(StatusClosed)
 

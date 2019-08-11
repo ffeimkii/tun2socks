@@ -3,6 +3,7 @@ package util
 import (
 	"io"
 	"net"
+	"os"
 	"runtime"
 	"strings"
 	"syscall"
@@ -14,10 +15,10 @@ import (
 func IsEOF(err error) bool {
 	if err == nil {
 		return false
-	} else if err == io.EOF {
+	} else if err == io.EOF || err == io.ErrUnexpectedEOF {
 		return true
-	} else if oerr, ok := err.(*net.OpError); ok {
-		if oerr.Err.Error() == "use of closed network connection" {
+	} else if opErr, ok := err.(*net.OpError); ok {
+		if opErr.Err.Error() == "use of closed network connection" {
 			return true
 		}
 	} else {
@@ -30,7 +31,23 @@ func IsEOF(err error) bool {
 
 // IsClosed do not log `endpoint is closed for send`, `endpoint is closed for receive` and `connection reset by peer` error.
 func IsClosed(err *tcpip.Error) bool {
-	if err == tcpip.ErrClosedForSend || err == tcpip.ErrClosedForReceive || err == tcpip.ErrConnectionReset {
+	if err == tcpip.ErrConnectionReset {
+		return true
+	}
+	return false
+}
+
+// IsConnectionReset ...
+func IsConnectionReset(err error) bool {
+	if opErr, ok := err.(*net.OpError); ok {
+		if syscallErr, ok := opErr.Err.(*os.SyscallError); ok {
+			if syscallErr.Err == syscall.ECONNRESET {
+				return true
+			}
+		}
+	}
+
+	if strings.Contains(err.Error(), "connection reset by peer") {
 		return true
 	}
 	return false

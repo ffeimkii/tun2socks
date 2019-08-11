@@ -40,7 +40,7 @@ func NewNetstack(app *App) tcpip.NetworkProtocolNumber {
 	}
 
 	// Create the stack with ip and tcp protocols, then add a tun-based NIC and address.
-	app.S = stack.New(&tcpip.StdClock{}, []string{ipv4.ProtocolName, ipv6.ProtocolName}, []string{tcp.ProtocolName, udp.ProtocolName})
+	app.S = stack.New([]string{ipv4.ProtocolName, ipv6.ProtocolName}, []string{tcp.ProtocolName, udp.ProtocolName}, stack.Options{})
 
 	app.HookPort = util.NewRandomPort(app.S)
 	if app.HookPort == 0 {
@@ -53,12 +53,16 @@ func NewNetstack(app *App) tcpip.NetworkProtocolNumber {
 		log.Fatalf("Bad MAC address: aa:00:01:01:01:01")
 	}
 
-	linkID := fdbased.New(app.Ifce, &fdbased.Options{
-		FD:             app.Ifce.Fd(),
-		MTU:            app.Cfg.General.Mtu,
-		EthernetHeader: false,
-		Address:        tcpip.LinkAddress(maddr),
+	linkID, err := fdbased.New(&fdbased.Options{
+		FD:                 app.Ifce.Fd(),
+		MTU:                app.Cfg.General.Mtu,
+		EthernetHeader:     false,
+		Address:            tcpip.LinkAddress(maddr),
+		PacketDispatchMode: fdbased.Readv,
 	})
+	if err != nil {
+		log.Fatal(err)
+	}
 	if err := app.S.CreateNIC(NICId, linkID, true, addr, app.HookPort); err != nil {
 		log.Fatal("Create NIC failed", err)
 	}
@@ -71,7 +75,7 @@ func NewNetstack(app *App) tcpip.NetworkProtocolNumber {
 	app.S.SetRouteTable([]tcpip.Route{
 		{
 			Destination: tcpip.Address(strings.Repeat("\x00", len(addr))),
-			Mask:        tcpip.Address(strings.Repeat("\x00", len(addr))),
+			Mask:        tcpip.AddressMask(strings.Repeat("\x00", len(addr))),
 			Gateway:     "",
 			NIC:         NICId,
 		},

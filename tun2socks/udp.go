@@ -25,7 +25,7 @@ func (app *App) NewUDPEndpointAndListenIt() error {
 		return errors.New(e.String())
 	}
 	defer ep.Close()
-	if err := ep.Bind(tcpip.FullAddress{NICId, "", app.HookPort}, nil); err != nil {
+	if err := ep.Bind(tcpip.FullAddress{NICId, "", app.HookPort}); err != nil {
 		return errors.New(e.String())
 	}
 
@@ -35,6 +35,13 @@ func (app *App) NewUDPEndpointAndListenIt() error {
 	defer wq.EventUnregister(&waitEntry)
 
 	for {
+		select {
+		case <-QuitUDPNetstack:
+			log.Println("quit udp netstack")
+			return nil
+		default:
+		}
+
 		var localAddr tcpip.FullAddress
 		v, _, err := ep.Read(&localAddr)
 		if err != nil {

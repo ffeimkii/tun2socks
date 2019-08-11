@@ -3,7 +3,7 @@
 ## How to use it? [more](https://github.com/FlowerWrong/tun2socks/wiki)
 
 ```
-# install golang 1.9+, becase of sync.Map
+# install golang 1.10+, because of sync.Map
 go get -u -v github.com/FlowerWrong/tun2socks
 cd tun2socks
 go get ./...
@@ -15,11 +15,16 @@ sudo go run cmd/main.go -v
 sudo go run cmd/main.go -c=config.ini
 ```
 
+## Note
+
+* For darwin and linux, you should use [netstack smart branch](https://github.com/FlowerWrong/netstack/tree/smart).
+* For windows user, you should use [netstack master branch](https://github.com/FlowerWrong/netstack).
+
 ## Support operating system.
 
 * [x] macOS
 * [x] linux
-* [x] Windows Vista and above support with [tap-windows6](https://github.com/OpenVPN/tap-windows6), [download link](https://openvpn.net/index.php/open-source/downloads.html)
+* [x] Windows Vista and above support with [tap-windows6](https://github.com/OpenVPN/tap-windows6), [download link](http://build.openvpn.net/downloads/releases/latest/), please use [netstack master branch](https://github.com/FlowerWrong/netstack).
 * [x] Raspberry Pi support
 * [x] android support with root
 

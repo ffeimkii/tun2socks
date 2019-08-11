@@ -39,7 +39,7 @@ type DNSConfig struct {
 	DNSPacketSize       uint16   `gcfg:"dns-packet-size"`
 	DNSReadTimeout      uint     `gcfg:"dns-read-timeout"`
 	DNSWriteTimeout     uint     `gcfg:"dns-write-timeout"`
-	AutoConfigSystemDNS bool     `gcfg:"uto-config-system-dns"`
+	AutoConfigSystemDNS bool     `gcfg:"auto-config-system-dns"`
 	Nameserver          []string // backend dns
 	OriginNameserver    string
 }
@@ -125,8 +125,9 @@ func (cfg *AppConfig) Parse(filename string) error {
 
 	// set backend dns default value
 	if len(cfg.DNS.Nameserver) == 0 {
-		cfg.DNS.Nameserver = append(cfg.DNS.Nameserver, "114.114.114.114:53")
+		cfg.DNS.Nameserver = append(cfg.DNS.Nameserver, "119.29.29.29:53")
 		cfg.DNS.Nameserver = append(cfg.DNS.Nameserver, "223.5.5.5:53")
+		cfg.DNS.Nameserver = append(cfg.DNS.Nameserver, "8.8.8.8:53")
 	}
 
 	err = cfg.check()
@@ -147,6 +148,12 @@ func (cfg *AppConfig) GetProxy(name string) string {
 		return ""
 	}
 	return url.Host
+}
+
+// GetProxySchema raw url from name
+func (cfg *AppConfig) GetProxySchema(name string) string {
+	proxyConfig := cfg.Proxy[name]
+	return proxyConfig.URL
 }
 
 // DefaultPorxy return default proxy addr, eg: socks5://127.0.0.1:1080, return 127.0.0.1:1080
@@ -170,6 +177,16 @@ func (cfg *AppConfig) DefaultPorxyConfig() *ProxyConfig {
 	return nil
 }
 
+// DefaultProxyName return the default ProxyConfig pointer
+func (cfg *AppConfig) DefaultProxyName() string {
+	for name, proxyConfig := range cfg.Proxy {
+		if proxyConfig.Default {
+			return name
+		}
+	}
+	return ""
+}
+
 // UDPProxy return the configed udp proxy
 func (cfg *AppConfig) UDPProxy() (string, error) {
 	proxyConfig := cfg.Proxy[cfg.UDP.Proxy]
@@ -186,4 +203,29 @@ func (cfg *AppConfig) UDPProxy() (string, error) {
 	}
 
 	return "", errors.New("404")
+}
+
+// UDPProxySchema return the configed udp proxy
+func (cfg *AppConfig) UDPProxySchema() (string, error) {
+	proxyConfig := cfg.Proxy[cfg.UDP.Proxy]
+	if proxyConfig == nil {
+		proxyConfig = cfg.DefaultPorxyConfig()
+	}
+	if proxyConfig != nil {
+		return proxyConfig.URL, nil
+	}
+
+	return "", errors.New("404")
+}
+
+// UDPProxyName return the configed udp proxy name only
+func (cfg *AppConfig) UDPProxyName() (string, error) {
+	proxyConfig := cfg.UDP.Proxy
+	if proxyConfig == "" {
+		proxyConfig = cfg.DefaultProxyName()
+	}
+	if proxyConfig == "" {
+		return "", errors.New("404")
+	}
+	return proxyConfig, nil
 }

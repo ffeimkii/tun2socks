@@ -19,7 +19,7 @@ func (app *App) NewTCPEndpointAndListenIt() error {
 	}
 
 	defer ep.Close()
-	if err := ep.Bind(tcpip.FullAddress{NICId, "", app.HookPort}, nil); err != nil {
+	if err := ep.Bind(tcpip.FullAddress{NICId, "", app.HookPort}); err != nil {
 		return errors.New(err.String())
 	}
 	if err := ep.Listen(Backlog); err != nil {
@@ -32,6 +32,13 @@ func (app *App) NewTCPEndpointAndListenIt() error {
 	defer wq.EventUnregister(&waitEntry)
 
 	for {
+		select {
+		case <-QuitTCPNetstack:
+			log.Println("quit tcp netstack")
+			return nil
+		default:
+		}
+
 		endpoint, wq, err := ep.Accept()
 		if err != nil {
 			if err == tcpip.ErrWouldBlock {

@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/FlowerWrong/go-hostsfile"
+	"github.com/FlowerWrong/proxy"
 	"github.com/FlowerWrong/tun2socks/configure"
 	"github.com/miekg/dns"
 	"github.com/miekg/dns/dnsutil"
-	"github.com/xjdrew/proxy"
 )
 
 var errResolve = errors.New("resolve error")
@@ -46,9 +46,11 @@ func (d *DNS) resolve(r *dns.Msg) (*dns.Msg, error) {
 
 		r, _, err := d.client.Exchange(r, ns)
 		if err != nil {
-			// eg: write: network is down
-			// eg: i/o timeout
-			log.Printf("[dns] resolve %s on %s failed: %v", qname, ns, err)
+			if e, ok := err.(net.Error); ok && e.Timeout() {
+				// This was a timeout
+			} else {
+				log.Printf("[dns] resolve %s on %s failed: %v", qname, ns, err)
+			}
 			return
 		}
 
@@ -64,7 +66,7 @@ func (d *DNS) resolve(r *dns.Msg) (*dns.Msg, error) {
 		}
 	}
 
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
 	for _, ns := range d.nameservers {
@@ -101,6 +103,7 @@ func (d *DNS) fillRealIP(record *DomainRecord, r *dns.Msg) {
 
 func (d *DNS) doIPv4Query(r *dns.Msg) (*dns.Msg, error) {
 	domain := dnsutil.TrimDomainName(r.Question[0].Name, ".")
+	domain = strings.ToLower(domain)
 	// if is a non-proxy-domain
 	if d.DNSTablePtr.IsNonProxyDomain(domain) {
 		return d.resolve(r)
@@ -170,6 +173,7 @@ func (d *DNS) doIPv4Query(r *dns.Msg) (*dns.Msg, error) {
 func (d *DNS) handler(w dns.ResponseWriter, r *dns.Msg) {
 	// /etc/hosts
 	domain := dnsutil.TrimDomainName(r.Question[0].Name, ".")
+	domain = strings.ToLower(domain)
 	ip, err := hostsfile.Lookup(domain)
 	if err == nil && ip != "" {
 		rsp := new(dns.Msg)

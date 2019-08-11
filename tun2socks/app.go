@@ -31,24 +31,56 @@ type App struct {
 
 // Stop ...
 func (app *App) Stop() {
-	defer func() {
-		close(QuitTCPNetstack)
-		close(QuitUDPNetstack)
-		close(QuitDNS)
-		close(QuitPprof)
-	}()
 	if UseTCPNetstack {
-		QuitTCPNetstack <- true
+		close(QuitTCPNetstack)
 	}
 	if UseUDPNetstack {
-		QuitUDPNetstack <- true
+		close(QuitUDPNetstack)
 	}
 	if UseDNS {
-		QuitDNS <- true
+		close(QuitDNS)
 	}
 	if UsePprof {
-		QuitPprof <- true
+		close(QuitPprof)
 	}
+}
+
+// StartTun2socks ...
+func (app *App) StartTun2socks(configFile string) {
+	app.Config(configFile).NewTun().AddRoutes().SignalHandler()
+	app.NetworkProtocolNumber = NewNetstack(app)
+
+	wgw := new(util.WaitGroupWrapper)
+	UseTCPNetstack = true
+	wgw.Wrap(func() {
+		app.NewTCPEndpointAndListenIt()
+	})
+	if app.Cfg.UDP.Enabled {
+		UseUDPNetstack = true
+		wgw.Wrap(func() {
+			app.NewUDPEndpointAndListenIt()
+		})
+	}
+	if app.Cfg.DNS.DNSMode == FakeMode {
+		go app.FakeDNS.DNSTablePtr.Serve()
+
+		UseDNS = true
+		wgw.Wrap(func() {
+			app.ServeDNS()
+		})
+		go app.StopDNS()
+	}
+
+	if app.Cfg.Pprof.Enabled {
+		UsePprof = true
+		wgw.Wrap(func() {
+			app.ServePprof()
+		})
+		go app.StopPprof()
+	}
+
+	log.Println(fmt.Sprintf("[app] run tun2socks(%.2f) success", app.Version))
+	wgw.WaitGroup.Wait()
 }
 
 // NewTun create a tun interface
@@ -80,7 +112,7 @@ func (app *App) Config(configFile string) *App {
 		log.Fatal("Get default proxy failed", err)
 	}
 
-	if app.Cfg.DNS.DNSMode == "fake" {
+	if app.Cfg.DNS.DNSMode == FakeMode {
 		app.FakeDNS, err = dns.NewFakeDNSServer(app.Cfg)
 		if err != nil {
 			log.Fatal("New fake dns server failed", err)
@@ -104,7 +136,7 @@ func (app *App) ReloadConfig() {
 	if err != nil {
 		log.Fatal("Get default proxy failed", err)
 	}
-	if app.Cfg.DNS.DNSMode == "fake" {
+	if app.Cfg.DNS.DNSMode == FakeMode {
 		app.FakeDNS.RulePtr.Reload(app.Cfg.Rule, app.Cfg.Pattern)
 
 		var ip, subnet, _ = net.ParseCIDR(app.Cfg.General.Network)
@@ -225,10 +257,17 @@ function flushCache {
 updateDNS l
 `
 	} else {
-		shell += `
+		if runtime.GOOS == "darwin" {
+			shell += `
+updateDNS d
+flushCache
+`
+		} else if runtime.GOOS == "linux" {
+			shell += `
 updateDNS a
 flushCache
 `
+		}
 	}
 	util.ExecShell(shell)
 }
